@@ -22,6 +22,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace ConsoleApplication
@@ -72,16 +73,16 @@ namespace ConsoleApplication
 
         private Task[] StartTasks()
         {
-            var tasks = new Task[Math.Min(_maxParallelizationCount, _processingQueue.Count)];
+            var tasks = new List<Task>();
             for (int i = 0; i < _maxParallelizationCount && _processingQueue.Count > 0; i++)
             {
                 Func<Task> res;
                 if (_processingQueue.TryDequeue(out res))
                 {
-                    tasks[i] = Task.Run(res);
+                    tasks.Add(Task.Run(res));
                 }
             }
-            return tasks;
+            return tasks.ToArray();
         }
     }
 
