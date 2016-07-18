@@ -54,15 +54,11 @@ namespace ConsoleApplication
         {
             StartTasks();
             Task t = null;
-            lock (_tscQueue) {
-                t = _tscQueue.Task;
-            }
+            t = _tscQueue.Task;
             if (t != null) {
                 await t;
             }
-            lock (_tscQueue) {
-                _tscQueue = new TaskCompletionSource<bool>();
-            }
+            _tscQueue = new TaskCompletionSource<bool>();
             Console.WriteLine("- empty queue");
         }
 
@@ -70,13 +66,11 @@ namespace ConsoleApplication
         {
             if (_processingQueue.IsEmpty && _runningTasks.IsEmpty)
             {
-                lock (_tscQueue) {
-                    _tscQueue.SetResult(true);
-                }
+                _tscQueue.SetResult(true);
             }
 
             var startMaxCount = _maxParallelizationCount - _runningTasks.Count;
-            for (int i = 0; i < startMaxCount && _processingQueue.Count > 0; i++)
+            for (int i = 0; i < startMaxCount; i++)
             {
                 Func<Task> futureTask;
                 if (_processingQueue.TryDequeue(out futureTask))
@@ -101,6 +95,7 @@ namespace ConsoleApplication
                     }
                 }
             }
+            // Console.WriteLine($"running tasks {_runningTasks.Count}");
         }
     }
 
@@ -117,7 +112,8 @@ namespace ConsoleApplication
         {
             var t = new TaskQueue(maxParallelizationCount: 2, maxQueueLength: 2);
             t.Queue(() => DoTask(1)); // Runs this on 1st batch
-            t.Process().Wait();       // Works even without `Wait()`, different output, but works
+            t.Process().Wait();       // Works even without `Wait()`, 
+                                      // different output, but works
 
             t.Queue(() => DoTask(2)); // Runs this on 2nd batch
             t.Queue(() => DoTask(3)); // Runs this on 2nd batch
