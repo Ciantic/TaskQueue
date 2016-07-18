@@ -82,14 +82,14 @@ namespace ConsoleApplication
                 if (_processingQueue.TryDequeue(out futureTask))
                 {
                     var t = Task.Run(futureTask);
-                    Console.WriteLine("Started {0}", t.GetHashCode());
+                    // Console.WriteLine("Started {0}", t.GetHashCode());
                     if (_runningTasks.TryAdd(t.GetHashCode(), t))
                     {
                         t.ContinueWith((t2) =>
                         {
                             Task _temp;
                             _runningTasks.TryRemove(t2.GetHashCode(), out _temp);
-                            Console.WriteLine("Completed {0}", t2.GetHashCode());
+                            // Console.WriteLine("Completed {0}", t2.GetHashCode());
 
                             // Continue the queue processing
                             StartTasks();
