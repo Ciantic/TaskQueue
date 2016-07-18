@@ -110,10 +110,11 @@ namespace ConsoleApplication
         public static void Main(string[] args)
         {
             var t = new TaskQueue(maxParallelizationCount: 2, maxQueueLength: 2);
-            t.Queue(() => DoTask(1)); // Runs this on 1st batch
-            t.Process().Wait();       // works even without `Wait()`,
-                                      // with that first and second starts at
-                                      // the same time
+            t.Queue(() => DoTask(1)); // Runs this on 1st batch.
+
+            // Works even without following `Wait()`, in that case the first and
+            // second starts at the same time
+            t.Process().Wait();
 
             t.Queue(() => DoTask(2)); // Runs this on 2nd batch
             t.Queue(() => DoTask(3)); // Runs this on 2nd batch
