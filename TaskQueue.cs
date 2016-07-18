@@ -32,8 +32,7 @@ namespace ConsoleApplication
         private readonly ConcurrentDictionary<int, Task> _runningTasks = new ConcurrentDictionary<int, Task>();
         private readonly int _maxParallelizationCount;
         private readonly int _maxQueueLength;
-        private Task _runningQueueTask;
-        private object _lockRunningQueueTask = new object();
+        private TaskCompletionSource<bool> _tscQueue = new TaskCompletionSource<bool>();
 
         public TaskQueue(int? maxParallelizationCount = null, int? maxQueueLength = null)
         {
@@ -53,32 +52,27 @@ namespace ConsoleApplication
 
         public async Task Process()
         {
-            lock (_lockRunningQueueTask)
-            {
-                if (_runningQueueTask == null)
-                {
-                    _runningQueueTask = StartTasks();
-                }
+            StartTasks();
+            Task t = null;
+            lock (_tscQueue) {
+                t = _tscQueue.Task;
             }
-            await _runningQueueTask;
-            lock (_lockRunningQueueTask)
-            {
-                _runningQueueTask = null;
+            if (t != null) {
+                await t;
+            }
+            lock (_tscQueue) {
+                _tscQueue = new TaskCompletionSource<bool>();
             }
             Console.WriteLine("- empty queue");
         }
 
-        private Task StartTasks(TaskCompletionSource<bool> tsc = null)
+        private void StartTasks()
         {
-            if (tsc == null)
-            {
-                tsc = new TaskCompletionSource<bool>();
-            }
-
             if (_processingQueue.IsEmpty && _runningTasks.IsEmpty)
             {
-                tsc.SetResult(true);
-                return tsc.Task;
+                lock (_tscQueue) {
+                    _tscQueue.SetResult(true);
+                }
             }
 
             var startMaxCount = _maxParallelizationCount - _runningTasks.Count;
@@ -88,17 +82,17 @@ namespace ConsoleApplication
                 if (_processingQueue.TryDequeue(out futureTask))
                 {
                     var t = Task.Run(futureTask);
-                    // Console.WriteLine("Started {0}", t.GetHashCode());
+                    Console.WriteLine("Started {0}", t.GetHashCode());
                     if (_runningTasks.TryAdd(t.GetHashCode(), t))
                     {
                         t.ContinueWith((t2) =>
                         {
                             Task _temp;
                             _runningTasks.TryRemove(t2.GetHashCode(), out _temp);
-                            // Console.WriteLine("Completed {0}", t2.GetHashCode());
+                            Console.WriteLine("Completed {0}", t2.GetHashCode());
 
                             // Continue the queue processing
-                            StartTasks(tsc);
+                            StartTasks();
                         });
                     }
                     else
@@ -107,7 +101,6 @@ namespace ConsoleApplication
                     }
                 }
             }
-            return tsc.Task;
         }
     }
 
@@ -124,7 +117,7 @@ namespace ConsoleApplication
         {
             var t = new TaskQueue(maxParallelizationCount: 2, maxQueueLength: 2);
             t.Queue(() => DoTask(1)); // Runs this on 1st batch
-            t.Process().Wait();       // Works even without `Wait()`
+            t.Process().Wait();       // Works even without `Wait()`, different output, but works
 
             t.Queue(() => DoTask(2)); // Runs this on 2nd batch
             t.Queue(() => DoTask(3)); // Runs this on 2nd batch
