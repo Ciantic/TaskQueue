@@ -22,6 +22,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace ConsoleApplication
@@ -53,11 +54,7 @@ namespace ConsoleApplication
         public async Task Process()
         {
             StartTasks();
-            Task t = _tscQueue.Task;
-            if (t != null) {
-                await t;
-            }
-            _tscQueue = new TaskCompletionSource<bool>();
+            await _tscQueue.Task;
             Console.WriteLine("- empty queue");
         }
 
@@ -65,7 +62,10 @@ namespace ConsoleApplication
         {
             if (_processingQueue.IsEmpty && _runningTasks.IsEmpty)
             {
-                _tscQueue.SetResult(true);
+                // Interlocked.Exchange might not be necessary
+                var _oldQueue = Interlocked.Exchange(
+                    ref _tscQueue, new TaskCompletionSource<bool>());
+                _oldQueue.TrySetResult(true);
             }
 
             var startMaxCount = _maxParallelizationCount - _runningTasks.Count;
@@ -111,8 +111,9 @@ namespace ConsoleApplication
         {
             var t = new TaskQueue(maxParallelizationCount: 2, maxQueueLength: 2);
             t.Queue(() => DoTask(1)); // Runs this on 1st batch
-            t.Process().Wait();       // Works even without `Wait()`, 
-                                      // different output, but works
+            t.Process().Wait();       // works even without `Wait()`,
+                                      // with that first and second starts at
+                                      // the same time
 
             t.Queue(() => DoTask(2)); // Runs this on 2nd batch
             t.Queue(() => DoTask(3)); // Runs this on 2nd batch
