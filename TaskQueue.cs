@@ -53,8 +53,7 @@ namespace ConsoleApplication
         public async Task Process()
         {
             StartTasks();
-            Task t = null;
-            t = _tscQueue.Task;
+            Task t = _tscQueue.Task;
             if (t != null) {
                 await t;
             }
