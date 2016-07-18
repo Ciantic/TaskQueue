@@ -22,7 +22,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace ConsoleApplication
@@ -30,9 +29,11 @@ namespace ConsoleApplication
     public class TaskQueue
     {
         private readonly ConcurrentQueue<Func<Task>> _processingQueue = new ConcurrentQueue<Func<Task>>();
-        private readonly ConcurrentStack<Task> _runningTasks = new ConcurrentStack<Task>();
+        private readonly ConcurrentDictionary<int, Task> _runningTasks = new ConcurrentDictionary<int, Task>();
         private readonly int _maxParallelizationCount;
         private readonly int _maxQueueLength;
+        private Task _runningQueueTask;
+        private object _lockRunningQueueTask = new object();
 
         public TaskQueue(int? maxParallelizationCount = null, int? maxQueueLength = null)
         {
@@ -52,37 +53,61 @@ namespace ConsoleApplication
 
         public async Task Process()
         {
-            if (_runningTasks.Count > 0)
+            lock (_lockRunningQueueTask)
             {
-                await Task.WhenAll(_runningTasks);
-                return;
-            }
-            var tasks = StartTasks();
-            if (tasks.Length == 0)
-            {
-                return;
-            }
-            _runningTasks.PushRange(tasks);
-            await Task.WhenAll(_runningTasks);
-            _runningTasks.Clear();
-            Console.WriteLine("-");
-
-            // Processes until the queue is empty
-            await Process();
-        }
-
-        private Task[] StartTasks()
-        {
-            var tasks = new List<Task>();
-            for (int i = 0; i < _maxParallelizationCount && _processingQueue.Count > 0; i++)
-            {
-                Func<Task> res;
-                if (_processingQueue.TryDequeue(out res))
+                if (_runningQueueTask == null)
                 {
-                    tasks.Add(Task.Run(res));
+                    _runningQueueTask = StartTasks();
                 }
             }
-            return tasks.ToArray();
+            await _runningQueueTask;
+            lock (_lockRunningQueueTask)
+            {
+                _runningQueueTask = null;
+            }
+            Console.WriteLine("- empty queue");
+        }
+
+        private Task StartTasks(TaskCompletionSource<bool> tsc = null)
+        {
+            if (tsc == null)
+            {
+                tsc = new TaskCompletionSource<bool>();
+            }
+
+            if (_processingQueue.IsEmpty && _runningTasks.IsEmpty)
+            {
+                tsc.SetResult(true);
+                return tsc.Task;
+            }
+
+            var startMaxCount = _maxParallelizationCount - _runningTasks.Count;
+            for (int i = 0; i < startMaxCount && _processingQueue.Count > 0; i++)
+            {
+                Func<Task> futureTask;
+                if (_processingQueue.TryDequeue(out futureTask))
+                {
+                    var t = Task.Run(futureTask);
+                    // Console.WriteLine("Started {0}", t.GetHashCode());
+                    if (_runningTasks.TryAdd(t.GetHashCode(), t))
+                    {
+                        t.ContinueWith((t2) =>
+                        {
+                            Task _temp;
+                            _runningTasks.TryRemove(t2.GetHashCode(), out _temp);
+                            // Console.WriteLine("Completed {0}", t2.GetHashCode());
+
+                            // Continue the queue processing
+                            StartTasks(tsc);
+                        });
+                    }
+                    else
+                    {
+                        throw new Exception("Should not happen");
+                    }
+                }
+            }
+            return tsc.Task;
         }
     }
 
@@ -107,7 +132,6 @@ namespace ConsoleApplication
             t.Queue(() => DoTask(4)); // Not ran, capped
             t.Queue(() => DoTask(5)); // Not ran, capped
             t.Queue(() => DoTask(6)); // Not ran, capped
-
             t.Process().Wait();
 
             t.Queue(() => DoTask(7)); // Runs this on 2nd batch
