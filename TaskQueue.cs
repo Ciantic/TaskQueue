@@ -74,24 +74,23 @@ namespace ConsoleApplication
                 Func<Task> futureTask;
                 if (_processingQueue.TryDequeue(out futureTask))
                 {
-                    var t = Task.Run(futureTask);
                     // Console.WriteLine("Started {0}", t.GetHashCode());
-                    if (_runningTasks.TryAdd(t.GetHashCode(), t))
-                    {
-                        t.ContinueWith((t2) =>
-                        {
-                            Task _temp;
-                            _runningTasks.TryRemove(t2.GetHashCode(), out _temp);
-                            // Console.WriteLine("Completed {0}", t2.GetHashCode());
+                    var t = Task.Run(futureTask);
+                    if (!_runningTasks.TryAdd(t.GetHashCode(), t)) {
+                        throw new Exception("Should not happen, hash codes are unique");
+                    }
 
-                            // Continue the queue processing
-                            StartTasks();
-                        });
-                    }
-                    else
+                    t.ContinueWith((t2) =>
                     {
-                        throw new Exception("Should not happen");
-                    }
+                        Task _temp;
+                        if (!_runningTasks.TryRemove(t2.GetHashCode(), out _temp)) {
+                            throw new Exception("Should not happen, hash codes are unique");
+                        }
+                        // Console.WriteLine("Completed {0}", t2.GetHashCode());
+
+                        // Continue the queue processing
+                        StartTasks();
+                    });
                 }
             }
             // Console.WriteLine($"running tasks {_runningTasks.Count}");
@@ -112,8 +111,9 @@ namespace ConsoleApplication
             var t = new TaskQueue(maxParallelizationCount: 2, maxQueueLength: 2);
             t.Queue(() => DoTask(1)); // Runs this on 1st batch.
 
-            // Works even without following `Wait()`, in that case the first and
-            // second starts at the same time
+            // Works even without following `Wait()`, in that case the first
+            // starts immediately the second near instantly following, and third
+            // waits until either 1 or 2 completes.
             t.Process().Wait();
 
             t.Queue(() => DoTask(2)); // Runs this on 2nd batch
