@@ -72,26 +72,29 @@ namespace ConsoleApplication
             for (int i = 0; i < startMaxCount; i++)
             {
                 Func<Task> futureTask;
-                if (_processingQueue.TryDequeue(out futureTask))
+                if (!_processingQueue.TryDequeue(out futureTask))
                 {
-                    // Console.WriteLine("Started {0}", t.GetHashCode());
-                    var t = Task.Run(futureTask);
-                    if (!_runningTasks.TryAdd(t.GetHashCode(), t)) {
+                    // Queue is most likely empty
+                    break;
+                }
+
+                // Console.WriteLine("Started {0}", t.GetHashCode());
+                var t = Task.Run(futureTask);
+                if (!_runningTasks.TryAdd(t.GetHashCode(), t)) {
+                    throw new Exception("Should not happen, hash codes are unique");
+                }
+
+                t.ContinueWith((t2) =>
+                {
+                    Task _temp;
+                    if (!_runningTasks.TryRemove(t2.GetHashCode(), out _temp)) {
                         throw new Exception("Should not happen, hash codes are unique");
                     }
+                    // Console.WriteLine("Completed {0}", t2.GetHashCode());
 
-                    t.ContinueWith((t2) =>
-                    {
-                        Task _temp;
-                        if (!_runningTasks.TryRemove(t2.GetHashCode(), out _temp)) {
-                            throw new Exception("Should not happen, hash codes are unique");
-                        }
-                        // Console.WriteLine("Completed {0}", t2.GetHashCode());
-
-                        // Continue the queue processing
-                        StartTasks();
-                    });
-                }
+                    // Continue the queue processing
+                    StartTasks();
+                });
             }
             // Console.WriteLine($"running tasks {_runningTasks.Count}");
         }
