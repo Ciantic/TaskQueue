@@ -24,6 +24,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
+using Xunit;
 
 namespace ConsoleApplication
 {
@@ -51,11 +52,18 @@ namespace ConsoleApplication
             return false;
         }
 
+        public int GetQueueCount() {
+            return this._processingQueue.Count; 
+        }
+
+        public int GetRunningCount() {
+            return this._runningTasks.Count;
+        }
+
         public async Task Process()
         {
             StartTasks();
             await _tscQueue.Task;
-            Console.WriteLine("- empty queue");
         }
 
         private void StartTasks()
@@ -78,26 +86,82 @@ namespace ConsoleApplication
                     break;
                 }
 
-                // Console.WriteLine("Started {0}", t.GetHashCode());
                 var t = Task.Run(futureTask);
-                if (!_runningTasks.TryAdd(t.GetHashCode(), t)) {
+                if (!_runningTasks.TryAdd(t.GetHashCode(), t))
+                {
                     throw new Exception("Should not happen, hash codes are unique");
                 }
 
                 t.ContinueWith((t2) =>
                 {
                     Task _temp;
-                    if (!_runningTasks.TryRemove(t2.GetHashCode(), out _temp)) {
+                    if (!_runningTasks.TryRemove(t2.GetHashCode(), out _temp))
+                    {
                         throw new Exception("Should not happen, hash codes are unique");
                     }
-                    // Console.WriteLine("Completed {0}", t2.GetHashCode());
 
                     // Continue the queue processing
                     StartTasks();
                 });
             }
-            // Console.WriteLine($"running tasks {_runningTasks.Count}");
         }
+    }
+
+    public class Tests
+    {
+        public static async Task DoTask(int n)
+        {
+            Console.WriteLine($"Processing: {n}");
+            await Task.Delay(1000);
+            Console.WriteLine($"Processsed: {n}");
+        }
+
+        [Fact]
+        public async Task TestQueueLength()
+        {
+            var t = new TaskQueue(maxQueueLength: 2);
+            t.Queue(async () => { await Task.Delay(40); });
+            t.Queue(async () => { await Task.Delay(40); });
+            t.Queue(async () => { await Task.Delay(40); }); // Dropped, not ran
+            t.Queue(async () => { await Task.Delay(40); }); // Dropped, not ran
+            Assert.Equal(2, t.GetQueueCount());
+            await t.Process();
+        }
+
+        [Fact]
+        public async Task TestMaxParallelization()
+        {
+            var t = new TaskQueue(maxParallelizationCount: 4);
+            var n = 0;
+            // Sequential delays should ensure that tasks complete in order for
+            // `n` to grow linearly
+            t.Queue(async () => { await Task.Delay(40); n++; });
+            t.Queue(async () => { await Task.Delay(50); n++; });
+            t.Queue(async () => { await Task.Delay(60); n++; });
+            t.Queue(async () => { await Task.Delay(70); n++; });
+
+            // Following are queued and will be run as above tasks complete
+            // Task delay for the first must be 40 because 40 + 40 > 70 
+            t.Queue(async () => { await Task.Delay(40); n++; }); 
+            t.Queue(async () => { await Task.Delay(50); n++; }); 
+            
+            // Intentionally not awaited, starts tasks asynchronously
+            t.Process();
+            
+            // Wait for tasks to start
+            await Task.Delay(10);
+
+            // Tasks should now be running
+            Assert.Equal(4, t.GetRunningCount());
+            
+            await t.Process();
+
+            // Queue and running tasks should now have ran to completion
+            Assert.Equal(0, t.GetRunningCount());
+            Assert.Equal(0, t.GetQueueCount());
+            Assert.Equal(6, n);
+        }
+
     }
 
     public class Program
@@ -118,6 +182,8 @@ namespace ConsoleApplication
             // starts immediately the second near instantly following, and third
             // waits until either 1 or 2 completes.
             t.Process().Wait();
+            Console.WriteLine("First batch should have ran to completion.");
+            Console.WriteLine("");
 
             t.Queue(() => DoTask(2)); // Runs this on 2nd batch
             t.Queue(() => DoTask(3)); // Runs this on 2nd batch
@@ -126,13 +192,19 @@ namespace ConsoleApplication
             t.Queue(() => DoTask(5)); // Not ran, capped
             t.Queue(() => DoTask(6)); // Not ran, capped
             t.Process().Wait();
+            Console.WriteLine($"Processed second batch. Queue and running tasks should be empty.");
+            Console.WriteLine($"Queue has now {t.GetQueueCount()} future tasks, and {t.GetRunningCount()} running tasks.");
+            Console.WriteLine("");
 
             t.Queue(() => DoTask(7)); // Runs this on 2nd batch
             t.Queue(() => DoTask(8)); // Runs this on 2nd batch
 
             t.Queue(() => DoTask(9)); // Not ran, capped
+            Console.WriteLine($"Queued. Queue should have two future tasks, and nothing running yet.");
+            Console.WriteLine($"Queue has now {t.GetQueueCount()} future tasks, and {t.GetRunningCount()} running tasks.");
 
             t.Process().Wait();
+            Console.WriteLine("Completed, press any key to quit.");
             Console.ReadLine();
             Console.WriteLine("The End!");
         }
