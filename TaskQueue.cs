@@ -62,8 +62,9 @@ namespace ConsoleApplication
 
         public async Task Process()
         {
+            var t = _tscQueue.Task;
             StartTasks();
-            await _tscQueue.Task;
+            await t;
         }
 
         private void StartTasks()
@@ -160,6 +161,13 @@ namespace ConsoleApplication
             Assert.Equal(0, t.GetRunningCount());
             Assert.Equal(0, t.GetQueueCount());
             Assert.Equal(6, n);
+        }
+
+        [Fact]
+        public async Task TestEmptyRun()
+        {
+            var t = new TaskQueue(maxParallelizationCount: 4);
+            await t.Process();
         }
     }
 
