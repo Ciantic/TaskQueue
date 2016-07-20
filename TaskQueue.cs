@@ -68,14 +68,6 @@ namespace ConsoleApplication
 
         private void StartTasks()
         {
-            if (_processingQueue.IsEmpty && _runningTasks.IsEmpty)
-            {
-                // Interlocked.Exchange might not be necessary
-                var _oldQueue = Interlocked.Exchange(
-                    ref _tscQueue, new TaskCompletionSource<bool>());
-                _oldQueue.TrySetResult(true);
-            }
-
             var startMaxCount = _maxParallelizationCount - _runningTasks.Count;
             for (int i = 0; i < startMaxCount; i++)
             {
@@ -103,6 +95,14 @@ namespace ConsoleApplication
                     // Continue the queue processing
                     StartTasks();
                 });
+            }
+
+            if (_processingQueue.IsEmpty && _runningTasks.IsEmpty)
+            {
+                // Interlocked.Exchange might not be necessary
+                var _oldQueue = Interlocked.Exchange(
+                    ref _tscQueue, new TaskCompletionSource<bool>());
+                _oldQueue.TrySetResult(true);
             }
         }
     }
@@ -161,7 +161,6 @@ namespace ConsoleApplication
             Assert.Equal(0, t.GetQueueCount());
             Assert.Equal(6, n);
         }
-
     }
 
     public class Program
