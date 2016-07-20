@@ -53,11 +53,11 @@ namespace ConsoleApplication
         }
 
         public int GetQueueCount() {
-            return this._processingQueue.Count; 
+            return _processingQueue.Count; 
         }
 
         public int GetRunningCount() {
-            return this._runningTasks.Count;
+            return _runningTasks.Count;
         }
 
         public async Task Process()
