@@ -67,6 +67,12 @@ namespace ConsoleApplication
             await t;
         }
 
+        public void ProcessBackground(Action<Exception> exception = null) {
+            Task.Run(Process).ContinueWith(t => {
+                exception?.Invoke(t.Exception);
+            }, TaskContinuationOptions.OnlyOnFaulted);
+        }
+
         private void StartTasks()
         {
             var startMaxCount = _maxParallelizationCount - _runningTasks.Count;
@@ -147,7 +153,7 @@ namespace ConsoleApplication
             t.Queue(async () => { await Task.Delay(50); n++; }); 
             
             // Intentionally not awaited, starts tasks asynchronously
-            t.Process();
+            t.ProcessBackground();
             
             // Wait for tasks to start
             await Task.Delay(10);
