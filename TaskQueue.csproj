@@ -5,6 +5,9 @@
     <TargetFramework>net6.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    
+    <!--  CA1050: Suppress namespace warning -->
+    <NoWarn>CA1050</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
