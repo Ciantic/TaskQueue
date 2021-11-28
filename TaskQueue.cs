@@ -64,11 +64,12 @@ public class TaskQueue
         await t;
     }
 
-    public void ProcessBackground(Action<Exception?>? exception = null)
+    public void ProcessBackground(Action<Exception>? exception = null)
     {
         Task.Run(Process).ContinueWith(t =>
         {
-            exception?.Invoke(t.Exception);
+            // OnlyOnFaulted guarentees Task.Exception is not null
+            exception?.Invoke(t.Exception!);
         }, TaskContinuationOptions.OnlyOnFaulted);
     }
 
