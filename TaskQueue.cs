@@ -89,9 +89,9 @@ public class TaskQueue
         }
     }
 
-    public void CancelAfter(TimeSpan delay)
+    public void Cancel(TimeSpan delay)
     {
-        // TODO: No tests yet, but it should work just as Cancel does!
+        // TODO: No tests yet, but it should work just as regular Cancel does.
 
         // Set queued tokens cancelled
         foreach (var (c, _) in _processingQueue)
