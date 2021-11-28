@@ -25,8 +25,12 @@ using Xunit;
 
 public class TaskQueue
 {
-    private readonly ConcurrentQueue<Func<Task>> _processingQueue = new();
-    private readonly ConcurrentDictionary<int, Task> _runningTasks = new();
+    public class QueueLimitReachedException : Exception
+    {
+    }
+
+    private readonly ConcurrentQueue<(CancellationTokenSource, Func<CancellationToken, Task>)> _processingQueue = new();
+    private readonly ConcurrentDictionary<int, (Task, CancellationTokenSource)> _runningTasks = new();
     private readonly int _maxParallelizationCount;
     private readonly int _maxQueueLength;
     private TaskCompletionSource<bool> _tscQueue = new();
@@ -37,14 +41,24 @@ public class TaskQueue
         _maxQueueLength = maxQueueLength ?? int.MaxValue;
     }
 
-    public bool Queue(Func<Task> futureTask)
+    public void Queue(Func<Task> futureTask)
     {
-        if (_processingQueue.Count < _maxQueueLength)
+        if (_processingQueue.Count >= _maxQueueLength)
         {
-            _processingQueue.Enqueue(futureTask);
-            return true;
+            throw new QueueLimitReachedException();
         }
-        return false;
+        _processingQueue.Enqueue((new CancellationTokenSource(), (c) => futureTask.Invoke()));
+    }
+
+    public CancellationTokenSource QueueCancellable(Func<CancellationToken, Task> futureTask)
+    {
+        if (_processingQueue.Count >= _maxQueueLength)
+        {
+            throw new QueueLimitReachedException();
+        }
+        var cancelSource = new CancellationTokenSource();
+        _processingQueue.Enqueue((cancelSource, futureTask));
+        return cancelSource;
     }
 
     public int GetQueueCount()
@@ -55,6 +69,44 @@ public class TaskQueue
     public int GetRunningCount()
     {
         return _runningTasks.Count;
+    }
+
+    public void Cancel()
+    {
+        // Set queued tokens cancelled
+        foreach (var (c, _) in _processingQueue)
+        {
+            c.Cancel();
+        }
+
+        // Clear the queue
+        _processingQueue.Clear();
+
+        // Cancel all running tasks
+        foreach (var (_, (_, cancelSource)) in _runningTasks)
+        {
+            cancelSource.Cancel();
+        }
+    }
+
+    public void CancelAfter(TimeSpan delay)
+    {
+        // TODO: No tests yet, but it should work just as Cancel does!
+
+        // Set queued tokens cancelled
+        foreach (var (c, _) in _processingQueue)
+        {
+            c.CancelAfter(delay);
+        }
+
+        // Clear the queue
+        _processingQueue.Clear();
+
+        // Cancel all running tasks
+        foreach (var (_, (_, cancelSource)) in _runningTasks)
+        {
+            cancelSource.CancelAfter(delay);
+        }
     }
 
     public async Task Process()
@@ -78,27 +130,28 @@ public class TaskQueue
         var startMaxCount = _maxParallelizationCount - _runningTasks.Count;
         for (int i = 0; i < startMaxCount; i++)
         {
-            if (!_processingQueue.TryDequeue(out Func<Task>? futureTask))
+            if (!_processingQueue.TryDequeue(out var tokenFutureTask))
             {
                 // Queue is most likely empty
                 break;
             }
 
-            var t = Task.Run(futureTask);
-            if (!_runningTasks.TryAdd(t.GetHashCode(), t))
+            var (cancelSource, futureTask) = tokenFutureTask;
+            var t = Task.Run(() => futureTask.Invoke(cancelSource.Token), cancelSource.Token);
+            if (!_runningTasks.TryAdd(t.GetHashCode(), (t, cancelSource)))
             {
                 throw new Exception("Should not happen, hash codes are unique");
             }
 
             t.ContinueWith((t2) =>
             {
-                if (!_runningTasks.TryRemove(t2.GetHashCode(), out Task? _temp))
+                if (!_runningTasks.TryRemove(t2.GetHashCode(), out var _temp))
                 {
                     throw new Exception("Should not happen, hash codes are unique");
                 }
 
-                    // Continue the queue processing
-                    StartTasks();
+                // Continue the queue processing
+                StartTasks();
             });
         }
 
@@ -114,11 +167,91 @@ public class TaskQueue
 
 public class Tests
 {
-    public static async Task DoTask(int n)
+    [Fact]
+    public async Task TestCancellation()
     {
-        Console.WriteLine($"Processing: {n}");
-        await Task.Delay(1000);
-        Console.WriteLine($"Processsed: {n}");
+        var n = 0;
+        var t = new TaskQueue();
+        var source = t.QueueCancellable(async (cancel) =>
+        {
+            await Task.Delay(80, cancel);
+            n += 1;
+        });
+
+        // Start processing the queue
+        t.ProcessBackground();
+
+        // Cancel the task after 40 ms
+        await Task.Delay(40);
+        source.Cancel();
+
+        // Wait for queue to empty
+        await t.Process();
+
+        // The n+=1 did not run
+        Assert.Equal(0, n);
+    }
+
+    [Fact]
+    public void TestCancellationQueued()
+    {
+        var n = 0;
+        var t = new TaskQueue();
+        var c1 = t.QueueCancellable(async (cancel) =>
+        {
+            await Task.Delay(80, cancel);
+            n += 1;
+        });
+        var c2 = t.QueueCancellable(async (cancel) =>
+        {
+            await Task.Delay(120, cancel);
+            n += 1;
+        });
+
+        Assert.False(c1.IsCancellationRequested);
+        Assert.False(c2.IsCancellationRequested);
+        t.Cancel();
+        Assert.True(c1.IsCancellationRequested);
+        Assert.True(c2.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task TestCancellationRunningTasks()
+    {
+        var n = 0;
+        var t = new TaskQueue();
+        var c1 = t.QueueCancellable(async (cancel) =>
+        {
+            await Task.Delay(80, cancel);
+            n += 1;
+        });
+        var c2 = t.QueueCancellable(async (cancel) =>
+        {
+            await Task.Delay(120, cancel);
+            n += 1;
+        });
+
+        // Start processing the queue
+        t.ProcessBackground();
+
+        // Cancel the task after 40 ms
+        await Task.Delay(40);
+        Assert.Equal(2, t.GetRunningCount());
+        Assert.False(c1.IsCancellationRequested);
+        Assert.False(c2.IsCancellationRequested);
+        t.Cancel();
+        Assert.True(c1.IsCancellationRequested);
+        Assert.True(c2.IsCancellationRequested);
+
+        // Cancellation should take effect shortly
+        await Task.Delay(10);
+        Assert.Equal(0, t.GetRunningCount());
+
+        // Wait for queue to empty
+        await t.Process();
+
+        // The n+=1 did not run
+        Assert.Equal(0, n);
     }
 
     [Fact]
@@ -127,9 +260,7 @@ public class Tests
         var t = new TaskQueue(maxQueueLength: 2);
         t.Queue(async () => { await Task.Delay(40); });
         t.Queue(async () => { await Task.Delay(40); });
-        t.Queue(async () => { await Task.Delay(40); }); // Dropped, not ran
-        t.Queue(async () => { await Task.Delay(40); }); // Dropped, not ran
-        Assert.Equal(2, t.GetQueueCount());
+        Assert.Throws<TaskQueue.QueueLimitReachedException>(() => t.Queue(async () => { await Task.Delay(40); }));
         await t.Process();
     }
 
@@ -198,10 +329,15 @@ public class Program
 
         t.Queue(() => DoTask(2)); // Runs this on 2nd batch
         t.Queue(() => DoTask(3)); // Runs this on 2nd batch
+        try
+        {
+            t.Queue(() => DoTask(4)); // Not ran, capped
+        }
+        catch (TaskQueue.QueueLimitReachedException)
+        {
+            Console.WriteLine("Queue limit reached");
+        }
 
-        t.Queue(() => DoTask(4)); // Not ran, capped
-        t.Queue(() => DoTask(5)); // Not ran, capped
-        t.Queue(() => DoTask(6)); // Not ran, capped
         t.Process().Wait();
         Console.WriteLine($"Processed second batch. Queue and running tasks should be empty.");
         Console.WriteLine($"Queue has now {t.GetQueueCount()} future tasks, and {t.GetRunningCount()} running tasks.");
@@ -210,7 +346,14 @@ public class Program
         t.Queue(() => DoTask(7)); // Runs this on 2nd batch
         t.Queue(() => DoTask(8)); // Runs this on 2nd batch
 
-        t.Queue(() => DoTask(9)); // Not ran, capped
+        try
+        {
+            t.Queue(() => DoTask(9)); // Not ran, capped
+        }
+        catch (TaskQueue.QueueLimitReachedException)
+        {
+            Console.WriteLine("Queue limit reached 2");
+        }
         Console.WriteLine($"Queued. Queue should have two future tasks, and nothing running yet.");
         Console.WriteLine($"Queue has now {t.GetQueueCount()} future tasks, and {t.GetRunningCount()} running tasks.");
 
