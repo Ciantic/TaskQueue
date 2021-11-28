@@ -50,7 +50,7 @@ public class TaskQueue
         _processingQueue.Enqueue((new CancellationTokenSource(), (c) => futureTask.Invoke()));
     }
 
-    public CancellationTokenSource QueueCancellable(Func<CancellationToken, Task> futureTask)
+    public CancellationTokenSource Queue(Func<CancellationToken, Task> futureTask)
     {
         if (_processingQueue.Count >= _maxQueueLength)
         {
@@ -172,7 +172,7 @@ public class Tests
     {
         var n = 0;
         var t = new TaskQueue();
-        var source = t.QueueCancellable(async (cancel) =>
+        var source = t.Queue(async (cancel) =>
         {
             await Task.Delay(80, cancel);
             n += 1;
@@ -197,12 +197,12 @@ public class Tests
     {
         var n = 0;
         var t = new TaskQueue();
-        var c1 = t.QueueCancellable(async (cancel) =>
+        var c1 = t.Queue(async (cancel) =>
         {
             await Task.Delay(80, cancel);
             n += 1;
         });
-        var c2 = t.QueueCancellable(async (cancel) =>
+        var c2 = t.Queue(async (cancel) =>
         {
             await Task.Delay(120, cancel);
             n += 1;
@@ -220,12 +220,12 @@ public class Tests
     {
         var n = 0;
         var t = new TaskQueue();
-        var c1 = t.QueueCancellable(async (cancel) =>
+        var c1 = t.Queue(async (cancel) =>
         {
             await Task.Delay(80, cancel);
             n += 1;
         });
-        var c2 = t.QueueCancellable(async (cancel) =>
+        var c2 = t.Queue(async (cancel) =>
         {
             await Task.Delay(120, cancel);
             n += 1;
