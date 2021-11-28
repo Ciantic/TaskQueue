@@ -20,21 +20,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-using System;
 using System.Collections.Concurrent;
-using System.Threading;
-using System.Threading.Tasks;
 using Xunit;
 
 namespace ConsoleApplication
 {
     public class TaskQueue
     {
-        private readonly ConcurrentQueue<Func<Task>> _processingQueue = new ConcurrentQueue<Func<Task>>();
-        private readonly ConcurrentDictionary<int, Task> _runningTasks = new ConcurrentDictionary<int, Task>();
+        private readonly ConcurrentQueue<Func<Task>> _processingQueue = new();
+        private readonly ConcurrentDictionary<int, Task> _runningTasks = new();
         private readonly int _maxParallelizationCount;
         private readonly int _maxQueueLength;
-        private TaskCompletionSource<bool> _tscQueue = new TaskCompletionSource<bool>();
+        private TaskCompletionSource<bool> _tscQueue = new();
 
         public TaskQueue(int? maxParallelizationCount = null, int? maxQueueLength = null)
         {
@@ -67,7 +64,7 @@ namespace ConsoleApplication
             await t;
         }
 
-        public void ProcessBackground(Action<Exception> exception = null) {
+        public void ProcessBackground(Action<Exception?>? exception = null) {
             Task.Run(Process).ContinueWith(t => {
                 exception?.Invoke(t.Exception);
             }, TaskContinuationOptions.OnlyOnFaulted);
@@ -78,8 +75,7 @@ namespace ConsoleApplication
             var startMaxCount = _maxParallelizationCount - _runningTasks.Count;
             for (int i = 0; i < startMaxCount; i++)
             {
-                Func<Task> futureTask;
-                if (!_processingQueue.TryDequeue(out futureTask))
+                if (!_processingQueue.TryDequeue(out Func<Task>? futureTask))
                 {
                     // Queue is most likely empty
                     break;
@@ -93,8 +89,7 @@ namespace ConsoleApplication
 
                 t.ContinueWith((t2) =>
                 {
-                    Task _temp;
-                    if (!_runningTasks.TryRemove(t2.GetHashCode(), out _temp))
+                    if (!_runningTasks.TryRemove(t2.GetHashCode(), out Task? _temp))
                     {
                         throw new Exception("Should not happen, hash codes are unique");
                     }
@@ -186,7 +181,7 @@ namespace ConsoleApplication
             Console.WriteLine($"Processsed: {n}");
         }
 
-        public static void Main(string[] args)
+        public static void Main()
         {
             var t = new TaskQueue(maxParallelizationCount: 2, maxQueueLength: 2);
             t.Queue(() => DoTask(1)); // Runs this on 1st batch.

@@ -1,8 +1,8 @@
 # TaskQueue
 
-Very simple class that implements thread-safe (hopefully) and lock-free task
-queue that can be awaited to complete it's tasks. Options are to set a degree of
-parallelization and maximum queue length.
+Very simple class that implements thread-safe (hopefully) task queue that can be
+awaited to complete it's tasks. Options are to set a degree of parallelization
+and maximum queue length.
 
 ## Testing
 
