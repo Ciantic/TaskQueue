@@ -73,14 +73,11 @@ public class TaskQueue
 
     public void Cancel()
     {
-        // Set queued tokens cancelled
-        foreach (var (c, _) in _processingQueue)
+        // Remove queued tasks, and cancel them
+        while (_processingQueue.TryDequeue(out var item))
         {
-            c.Cancel();
+            item.Item1.Cancel();
         }
-
-        // Clear the queue
-        _processingQueue.Clear();
 
         // Cancel all running tasks
         foreach (var (_, (_, cancelSource)) in _runningTasks)
@@ -93,14 +90,11 @@ public class TaskQueue
     {
         // TODO: No tests yet, but it should work just as regular Cancel does.
 
-        // Set queued tokens cancelled
-        foreach (var (c, _) in _processingQueue)
+        // Remove queued tasks, and cancel them
+        while (_processingQueue.TryDequeue(out var item))
         {
-            c.CancelAfter(delay);
+            item.Item1.CancelAfter(delay);
         }
-
-        // Clear the queue
-        _processingQueue.Clear();
 
         // Cancel all running tasks
         foreach (var (_, (_, cancelSource)) in _runningTasks)
